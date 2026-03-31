@@ -49,7 +49,7 @@ def load_mock_data():
     projects = [f"Project {name}" for name in ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Zeta", "Omega", "Sigma", "Tau", "Phi", "Chi", "Psi", "Rho", "Kappa", "Mu", "Nu"]]
     clients = ["Petrobras", "Eldorado", "Braskem", "Vale", "Natura", "Ambev", "WEG"]
 
-    # --- df_proposals (Sales Pipeline) ---
+# --- df_proposals (Sales Pipeline) ---
     proposals_data = {
         "codinome_projeto": projects,
         "cliente": [random.choice(clients) for _ in projects],
@@ -59,6 +59,7 @@ def load_mock_data():
         "orcamento_total": np.random.uniform(100000, 2000000, len(projects)),
         "orcamento_cpq": np.random.uniform(50000, 1000000, len(projects)),
         "meses_execucao_total": np.random.randint(6, 36, len(projects)),
+        "meses_execucao_cpq": np.random.randint(3, 24, len(projects)), # <--- ADDED THIS LINE
     }
     df_proposals = pd.DataFrame(proposals_data)
 
