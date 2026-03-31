@@ -12,10 +12,16 @@ import random
 # Setting layout to wide to mimic a professional managerial dashboard.
 st.set_page_config(page_title="Unified Project Lifecycle Dashboard", layout="wide", page_icon="📊")
 
-# Custom CSS for Material Design 3 tweaks (cleaner fonts, card-like containers)
+# Custom CSS for Material Design 3 tweaks
+# Using native Streamlit CSS variables (var(--...)) to support both Light and Dark modes natively.
 st.markdown("""
     <style>
-    .stMetric { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #e9ecef; }
+    [data-testid="stMetric"] { 
+        background-color: var(--secondary-background-color); 
+        padding: 15px; 
+        border-radius: 10px; 
+        border: 1px solid rgba(128, 128, 128, 0.2); 
+    }
     .st-emotion-cache-1wivap2 { padding-top: 2rem; }
     </style>
 """, unsafe_allow_html=True)
