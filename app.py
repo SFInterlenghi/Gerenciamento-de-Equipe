@@ -7,1002 +7,556 @@ from datetime import datetime, timedelta
 import random
 
 # ==========================================
-# 0. PAGE CONFIG (must be first st call)
+# 0. PAGE CONFIGURATION & UI SETUP
 # ==========================================
-st.set_page_config(
-    page_title="PSE — Lifecycle Dashboard",
-    layout="wide",
-    page_icon=":material/analytics:",
-)
+st.set_page_config(page_title="Unified Project Lifecycle Dashboard", layout="wide", page_icon="📊")
 
-# ==========================================
-# 1. GLOBAL CSS — scoped to our own classes
-# ==========================================
-# No targeting of Streamlit internals (.stHorizontalBlock, .st-emotion-cache-*).
-# All selectors use our own `.pse-*` namespace for forward-compatibility.
-GLOBAL_CSS = '''
-<style>
-/* ── Funnel stage header ── */
-.pse-stage-header {
-    text-align: center;
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    padding: 10px 0;
-    border-radius: 8px;
-    margin-bottom: 12px;
-}
-.pse-stage-header.prospeccao {
-    background: linear-gradient(135deg, #1e3a5f, #2b5ea7);
-    color: #e0ecff;
-}
-.pse-stage-header.negociacao {
-    background: linear-gradient(135deg, #5f4b1e, #a7862b);
-    color: #fff5d6;
-}
-.pse-stage-header.contratacao {
-    background: linear-gradient(135deg, #1e5f3a, #2ba75e);
-    color: #d6ffe5;
-}
-
-/* ── Project card ── */
-.pse-card {
-    background: var(--secondary-background-color, #f8f9fb);
-    border-radius: 10px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-    border-left: 5px solid var(--primary-color, #0969da);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-    cursor: default;
-}
-.pse-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-}
-.pse-card-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    gap: 8px;
-}
-.pse-card-logo {
-    height: 28px;
-    max-width: 80px;
-    object-fit: contain;
-    border-radius: 4px;
-    flex-shrink: 0;
-}
-.pse-card-budget {
-    font-size: 0.92rem;
-    font-weight: 700;
-    color: #1a7f37;
-    white-space: nowrap;
-}
-.pse-card-project {
-    font-weight: 600;
-    font-size: 0.95rem;
-    margin-bottom: 2px;
-}
-.pse-card-client {
-    font-size: 0.82rem;
-    opacity: 0.65;
-}
-.pse-card-meta {
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-}
-.pse-tag {
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-weight: 500;
-    background: rgba(128,128,128,0.12);
-}
-.pse-tag.fomento   { background: #dbeafe; color: #1e40af; }
-.pse-tag.direto    { background: #fef3c7; color: #92400e; }
-.pse-tag.embrapii  { background: #d1fae5; color: #065f46; }
-
-/* ── Empty stage ── */
-.pse-empty {
-    text-align: center;
-    padding: 24px 12px;
-    opacity: 0.45;
-    font-size: 0.85rem;
-}
-
-/* ── Stage count badge ── */
-.pse-count {
-    display: inline-block;
-    background: rgba(255,255,255,0.25);
-    padding: 1px 10px;
-    border-radius: 12px;
-    font-size: 0.78rem;
-    margin-left: 6px;
-    font-weight: 400;
-}
-
-/* ── Stage total (budget bar) ── */
-.pse-stage-total {
-    text-align: center;
-    font-size: 0.78rem;
-    font-weight: 600;
-    padding: 6px 0 2px;
-    opacity: 0.7;
-}
-</style>
-'''
-st.html(GLOBAL_CSS)
+# Custom CSS for Material Design 3 tweaks
+# Using native Streamlit CSS variables (var(--...)) to support both Light and Dark modes natively.
+st.markdown("""
+    <style>
+    [data-testid="stMetric"] { 
+        background-color: var(--secondary-background-color); 
+        padding: 15px; 
+        border-radius: 10px; 
+        border: 1px solid rgba(128, 128, 128, 0.2); 
+    }
+    .st-emotion-cache-1wivap2 { padding-top: 2rem; }
+    </style>
+""", unsafe_allow_html=True)
 
 # ==========================================
-# 2. ENUMS & CONSTANTS (Blueprint §1.5)
+# 1. ENUMS & SHARED CONSTANTS
 # ==========================================
 ENUMS = {
     "coordenacoes": ["CIF", "CIN", "CPQ", "CBT"],
-    "linhas_pesquisa": [
-        "Desenvolvimento Avançado de Processos",
-        "Engenharia de Sistemas em Processos",
-        "Inovação em Materiais Sustentáveis",
-        "Síntese Química Renovável",
-        "Tecnologia Analítica de Processos",
-        "Transformação e Valorização da Biomassa",
-    ],
-    "linhas_pesquisa_short": ["DAP", "ESP", "IMS", "SQR", "TAP", "TVB"],
-    "financiamento": [
-        "Contratação direta", "EMBRAPII - CG", "EMBRAPII - BFA",
-        "EMBRAPII - Outros", "ANP", "Edital SENAI", "ANEEL",
-    ],
+    "linhas_pesquisa": ["DAP", "ESP", "IMS", "SQR", "TAP", "TVB"],
+    "financiamento": ["Contratação direta", "EMBRAPII - CG", "EMBRAPII - BFA", "ANP", "Edital SENAI"],
     "tipo_projeto": ["Com fomento", "Sem fomento"],
     "etapa_proposta": ["Prospecção", "Negociação", "Contratação", "Contratado", "Recusado"],
     "status_projeto": ["Inicialização", "Execução", "Finalização", "Encerrado", "Cancelado"],
     "status_tarefa": ["Finalizado", "Atrasado", "Esta semana", "No prazo"],
-    "categoria_tarefa": ["Projeto", "Projeto Interno", "Prospecção"],
-    "finalizado_tarefa": ["Sim", "Não"],
+    "categoria_tarefa": ["Projetos", "Projetos internos", "Prospecções"],
     "status_notion": ["Aguardando", "Em execução", "Finalizado", "Cancelado"],
-    "gestores": ["Gustavo", "Raquel", "Sabrina", "Ana", "Igor", "Stefano", "Julliana", "Lidiane"],
-}
-
-STAGE_CSS_CLASS = {
-    "Prospecção": "prospeccao",
-    "Negociação": "negociacao",
-    "Contratação": "contratacao",
+    "gestores": ["Gustavo", "Raquel", "Sabrina", "Ana", "Igor", "Stefano", "Julliana", "Lidiane"]
 }
 
 # ==========================================
-# 3. MOCK DATA (self-contained, no file deps)
+# 2. MOCK DATA GENERATION
 # ==========================================
-@st.cache_data
-def generate_mock_proposals():
+def load_mock_data():
     np.random.seed(42)
     random.seed(42)
-    clients = ["Petrobras", "Eldorado", "Braskem", "Vale", "Natura", "Ambev",
-               "WEG", "Klabin", "Suzano", "BASF", "Raízen", "Cenibra", "Nitro"]
-    codenames = [
-        "CO2 to Methanol", "Fibra de Coco", "DT Café", "Biobutanol BFA",
-        "Anodos Sustentáveis", "Pirólise Plasma", "Centro Catálise",
-        "ATJ Aditivo", "Sensor Virtual", "RTO Celulose", "Caldeira ML",
-        "Zeolignin III", "Monitoramento pH", "Alcoxilação", "Silicato",
-        "Valvula Borboleta", "BRS Integrado", "Antioxidantes HPLC",
-    ]
-    etapas = (
-        ["Prospecção"] * 5 + ["Negociação"] * 6 + ["Contratação"] * 3
-        + ["Contratado"] * 3 + ["Recusado"] * 1
-    )
-    random.shuffle(etapas)
-    n = len(codenames)
-    etapas = (etapas * ((n // len(etapas)) + 1))[:n]
-    # Dummy logo — uses a small public placeholder per client initial
-    logo_base = "https://ui-avatars.com/api/?background=0D8ABC&color=fff&bold=true&size=64&name="
-    rows = []
-    for i, cod in enumerate(codenames):
-        cl = random.choice(clients)
-        orc_total = round(random.uniform(50_000, 5_000_000), 2)
-        orc_cpq = round(orc_total * random.uniform(0.3, 0.9), 2)
-        meses = random.randint(3, 36)
-        meses_cpq = max(1, meses - random.randint(0, 6))
-        financ = random.choice(ENUMS["financiamento"])
-        rows.append({
-            "coordenacao_responsavel": random.choice(ENUMS["coordenacoes"]),
-            "responsavel_cpq": random.choice(ENUMS["gestores"]),
-            "codinome_projeto": cod,
-            "tipo_projeto": random.choice(ENUMS["tipo_projeto"]),
-            "linha_pesquisa_cpq": random.choice(ENUMS["linhas_pesquisa_short"]),
-            "cliente": cl,
-            "logo_url": f"{logo_base}{cl.replace(' ', '+')}",
-            "financiamento": financ,
-            "etapa_atual": etapas[i],
-            "orcamento_total": orc_total,
-            "orcamento_cpq": orc_cpq,
-            "meses_execucao_total": meses,
-            "meses_execucao_cpq": meses_cpq,
-        })
-    return pd.DataFrame(rows)
+    
+    projects = [f"Project {name}" for name in ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Zeta", "Omega", "Sigma", "Tau", "Phi", "Chi", "Psi", "Rho", "Kappa", "Mu", "Nu"]]
+    clients = ["Petrobras", "Eldorado", "Braskem", "Vale", "Natura", "Ambev", "WEG"]
 
+    # --- df_proposals ---
+    proposals_data = {
+        "codinome_projeto": projects,
+        "cliente": [random.choice(clients) for _ in projects],
+        "coordenacao_responsavel": [random.choice(ENUMS["coordenacoes"]) for _ in projects],
+        "linha_pesquisa_cpq": [random.choice(ENUMS["linhas_pesquisa"]) for _ in projects],
+        "etapa_atual": [random.choice(ENUMS["etapa_proposta"]) for _ in projects],
+        "orcamento_total": np.random.uniform(100000, 2000000, len(projects)),
+        "orcamento_cpq": np.random.uniform(50000, 1000000, len(projects)),
+        "meses_execucao_total": np.random.randint(6, 36, len(projects)),
+        "meses_execucao_cpq": np.random.randint(3, 24, len(projects)),
+    }
+    df_proposals = pd.DataFrame(proposals_data)
 
-@st.cache_data
-def generate_mock_projects():
-    np.random.seed(42)
-    random.seed(42)
+    # --- df_projects ---
+    exec_projects = df_proposals[df_proposals["etapa_atual"] == "Contratado"]["codinome_projeto"].tolist()
+    exec_projects += [projects[0], projects[1], projects[2], projects[3], projects[4]] 
+    exec_projects = list(set(exec_projects))
+    
     today = datetime.today()
-    codenames = [
-        "CO2 to Methanol", "Fibra de Coco", "Biobutanol BFA",
-        "Sensor Virtual", "RTO Celulose", "Caldeira ML",
-        "ATJ Aditivo", "Zeolignin III", "BRS Integrado",
-    ]
-    rows = []
-    for cod in codenames:
-        orc = round(random.uniform(300_000, 3_000_000), 2)
-        rec_ext = round(orc * random.uniform(0.5, 1.0), 2)
-        comp = round(rec_ext * random.uniform(0.1, 0.95), 2)
-        inicio = today - timedelta(days=random.randint(30, 400))
-        termino = today + timedelta(days=random.randint(30, 500))
-        rows.append({
-            "codinome_projeto": cod,
-            "cliente": random.choice(["Petrobras", "Eldorado", "Braskem", "Klabin", "BASF"]),
-            "lider_tecnico": random.choice(ENUMS["gestores"]),
-            "status_projeto": random.choice(ENUMS["status_projeto"]),
-            "orcamento_atualizado": orc,
-            "receita_externa_atualizada": rec_ext,
-            "competencia_acumulada": comp,
-            "resgates_acumulados": round(comp * random.uniform(0.6, 1.0), 2),
-            "linha_pesquisa_cpq": random.choice(ENUMS["linhas_pesquisa_short"]),
-            "inicio_escopo_tecnico": inicio,
-            "termino_previsto": termino,
-        })
-    return pd.DataFrame(rows)
+    projects_data = {
+        "codinome_projeto": exec_projects,
+        "status_projeto": [random.choice(ENUMS["status_projeto"]) for _ in exec_projects],
+        "orcamento_atualizado": np.random.uniform(500000, 3000000, len(exec_projects)),
+        "receita_externa_atualizada": np.random.uniform(400000, 2500000, len(exec_projects)),
+        "competencia_acumulada": np.random.uniform(100000, 1500000, len(exec_projects)),
+        "linha_pesquisa_cpq": [random.choice(ENUMS["linhas_pesquisa"]) for _ in exec_projects],
+        "inicio_escopo_tecnico": [today - timedelta(days=random.randint(30, 300)) for _ in exec_projects],
+        "termino_previsto": [today + timedelta(days=random.randint(30, 365)) for _ in exec_projects],
+    }
+    df_projects = pd.DataFrame(projects_data)
 
-
-@st.cache_data
-def generate_mock_tasks():
-    np.random.seed(42)
-    random.seed(42)
-    today = datetime.today()
-    clients = ["Eldorado", "Braskem", "Petrobras", "Klabin", "BASF"]
-    projects = ["Caldeira", "ATJ", "BFA", "Zeolignin", "RTO", "Sensor Virtual"]
-    rows = []
-    for i in range(45):
-        days_offset = random.choice([-15, -7, -3, -1, 0, 1, 3, 5, 10, 20, 40])
-        data_criacao = today - timedelta(days=random.randint(0, 20))
-        rows.append({
+    # --- df_tasks (Weekly Planner) ---
+    tasks_data = []
+    for i in range(40):
+        days_offset = random.choice([-10, -5, -1, 0, 2, 4, 15, 30]) 
+        tasks_data.append({
             "categoria": random.choice(ENUMS["categoria_tarefa"]),
             "identificacao": f"[{random.choice(clients)}] {random.choice(projects)}",
-            "atividade": f"Atividade de exemplo #{i+1}",
+            "atividade": f"Atividade descritiva {i}",
             "prazo": today + timedelta(days=days_offset),
             "execucao": random.choice(ENUMS["gestores"]),
-            "apoio": random.choice(ENUMS["gestores"] + [None, None]),
+            "apoio": random.choice([None, "", random.choice(ENUMS["gestores"])]),
+            "observacao": random.choice(["", "Aguardando aprovação", "Revisão pendente do cliente", ""]),
             "finalizado": random.choice(["Sim", "Não", "Não", "Não"]),
-            "observacao": random.choice(["", "", "Dependência de fornecedor", "Aguardando validação interna"]),
-            "id": f"T-{i+1:04d}",
-            "data_criacao": data_criacao,
-            "data_atualizacao": data_criacao,
         })
-    return pd.DataFrame(rows)
+    df_tasks = pd.DataFrame(tasks_data)
 
-
-@st.cache_data
-def generate_mock_allocation():
-    np.random.seed(42)
-    random.seed(42)
-    today = datetime.today()
-    projects = ["CO2 to Methanol", "Caldeira ML", "ATJ Aditivo", "Sensor Virtual",
-                "Zeolignin III", "RTO Celulose", "BRS Integrado", "Fibra de Coco"]
-    rows = []
-    for _ in range(28):
-        start = today + timedelta(days=random.randint(-90, 30))
-        rows.append({
+    # --- df_allocation ---
+    allocation_data = []
+    for i in range(25):
+        start = today + timedelta(days=random.randint(-60, 30))
+        allocation_data.append({
             "projeto": random.choice(projects),
             "executor": random.choice(ENUMS["gestores"]),
-            "gestor": random.choice(ENUMS["gestores"]),
             "data_inicio": start,
-            "data_fim": start + timedelta(days=random.randint(14, 120)),
+            "data_fim": start + timedelta(days=random.randint(15, 90)),
             "status_notion": random.choice(ENUMS["status_notion"]),
         })
-    return pd.DataFrame(rows)
+    df_allocation = pd.DataFrame(allocation_data)
 
-# ==========================================
-# 4. SESSION STATE INIT
-# ==========================================
-if "db_init" not in st.session_state:
-    st.session_state.df_proposals = generate_mock_proposals()
-    st.session_state.df_projects = generate_mock_projects()
-    st.session_state.df_tasks = generate_mock_tasks()
-    st.session_state.df_allocation = generate_mock_allocation()
-    st.session_state.db_init = True
+    return df_proposals, df_projects, df_tasks, df_allocation
 
+# Initialize Session State Database
+if "db_initialized" not in st.session_state:
+    p, pr, t, a = load_mock_data()
+    st.session_state.df_proposals = p
+    st.session_state.df_projects = pr
+    st.session_state.df_tasks = t
+    st.session_state.df_allocation = a
+    st.session_state.db_initialized = True
 
 def reset_database():
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
-    generate_mock_proposals.clear()
-    generate_mock_projects.clear()
-    generate_mock_tasks.clear()
-    generate_mock_allocation.clear()
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
     st.rerun()
 
 # ==========================================
-# 5. BUSINESS LOGIC (Blueprint §2)
+# 3. BUSINESS LOGIC & CALCS
 # ==========================================
-def compute_task_status(row: pd.Series) -> str:
-    finalizado = str(row.get("finalizado", "Não")).strip().title()
-    if finalizado == "Sim":
+
+def compute_task_status(row):
+    if row.get("finalizado") == "Sim":
         return "Finalizado"
+    
     prazo = row.get("prazo")
     if pd.isna(prazo):
         return ""
+    
     today = datetime.today().date()
     prazo_date = pd.Timestamp(prazo).date()
+    
     if prazo_date < today:
         return "Atrasado"
+    
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
+    
     if monday <= prazo_date <= sunday:
         return "Esta semana"
+    
     return "No prazo"
 
-
-def prepare_task_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    required_defaults = {
-        "id": "",
-        "categoria": "Projeto",
-        "identificacao": "",
-        "atividade": "",
-        "prazo": pd.NaT,
-        "execucao": "",
-        "apoio": "",
-        "finalizado": "Não",
-        "observacao": "",
-        "status": "",
-        "data_criacao": pd.NaT,
-        "data_atualizacao": pd.NaT,
+def add_status_emoji(status):
+    mapping = {
+        "Atrasado": "🔴 Atrasado",
+        "Esta semana": "🟡 Esta semana",
+        "No prazo": "🟢 No prazo",
+        "Finalizado": "⚪ Finalizado",
     }
-    prepared = df.copy()
-    for col, default in required_defaults.items():
-        if col not in prepared.columns:
-            prepared[col] = default
+    return mapping.get(status, status)
 
-    categoria_map = {
-        "Projetos": "Projeto",
-        "Projetos internos": "Projeto Interno",
-        "Prospecções": "Prospecção",
-    }
-    prepared["categoria"] = (
-        prepared["categoria"]
-        .replace(categoria_map)
-        .fillna("Projeto")
-    )
-    prepared["categoria"] = prepared["categoria"].where(
-        prepared["categoria"].isin(ENUMS["categoria_tarefa"]), "Projeto"
-    )
+st.session_state.df_tasks["status"] = st.session_state.df_tasks.apply(compute_task_status, axis=1)
+st.session_state.df_tasks["status_ui"] = st.session_state.df_tasks["status"].apply(add_status_emoji)
 
-    prepared["finalizado"] = (
-        prepared["finalizado"]
-        .fillna("Não")
-        .astype(str)
-        .str.strip()
-        .str.title()
-    )
-    prepared["finalizado"] = prepared["finalizado"].where(
-        prepared["finalizado"].isin(ENUMS["finalizado_tarefa"]), "Não"
-    )
 
-    prepared["prazo"] = pd.to_datetime(prepared["prazo"], errors="coerce")
-    prepared["data_criacao"] = pd.to_datetime(prepared["data_criacao"], errors="coerce")
-    prepared["data_atualizacao"] = pd.to_datetime(prepared["data_atualizacao"], errors="coerce")
+# ==========================================
+# 4. WEEKLY PLANNER REFACTOR HELPERS
+# ==========================================
 
-    now = pd.Timestamp(datetime.now())
-    if prepared["id"].eq("").any() or prepared["id"].isna().any():
-        max_id = (
-            prepared["id"]
-            .dropna()
-            .astype(str)
-            .str.extract(r"T-(\d+)", expand=False)
-            .dropna()
-            .astype(int)
-            .max()
+def init_team_members():
+    """Initializes and updates the dynamic team members list in session state."""
+    if "team_members" not in st.session_state:
+        base = set(ENUMS["gestores"])
+        df = st.session_state.df_tasks
+        if "execucao" in df.columns:
+            base.update(df["execucao"].dropna().unique())
+        if "apoio" in df.columns:
+            base.update(df["apoio"].dropna().unique())
+        
+        # Clean up nulls or empty strings
+        base = {str(m).strip() for m in base if pd.notna(m) and str(m).strip()}
+        st.session_state.team_members = sorted(list(base))
+
+def render_team_management():
+    """Renders the UI for managing dynamic team members."""
+    with st.expander("👥 Gestão de equipe", expanded=False):
+        st.write("Membros atuais da equipe:")
+        # Render as nice inline tags
+        st.markdown(
+            " ".join([f"<span style='background-color: var(--secondary-background-color); padding: 4px 8px; border-radius: 12px; font-size: 13px; border: 1px solid rgba(128,128,128,0.2); margin-right: 4px;'>{m}</span>" for m in st.session_state.team_members]), 
+            unsafe_allow_html=True
         )
-        next_id = 1 if pd.isna(max_id) else int(max_id) + 1
-        for idx in prepared.index:
-            if pd.isna(prepared.at[idx, "id"]) or str(prepared.at[idx, "id"]).strip() == "":
-                prepared.at[idx, "id"] = f"T-{next_id:04d}"
-                next_id += 1
-
-    prepared["data_criacao"] = prepared["data_criacao"].fillna(now)
-    prepared["data_atualizacao"] = prepared["data_atualizacao"].fillna(now)
-    prepared["status"] = prepared.apply(compute_task_status, axis=1)
-    return prepared
-
-
-def render_task_kpis(df: pd.DataFrame):
-    ativos = df[df["finalizado"] != "Sim"]
-    with st.container(horizontal=True):
-        st.metric("Atividades ativas", len(ativos), border=True)
-        st.metric(":red-background[:red[Atrasadas]]", len(ativos[ativos["status"] == "Atrasado"]), border=True)
-        st.metric(":orange-background[:orange[Esta semana]]", len(ativos[ativos["status"] == "Esta semana"]), border=True)
-        st.metric(":green-background[:green[No prazo]]", len(ativos[ativos["status"] == "No prazo"]), border=True)
-        st.metric("Finalizadas", len(df[df["status"] == "Finalizado"]), border=True)
-
-
-def render_task_filters(df: pd.DataFrame) -> dict:
-    pessoas = sorted(set(df["execucao"].dropna().tolist()) | set(df["apoio"].dropna().tolist()))
-    identificacoes = sorted(df["identificacao"].dropna().astype(str).unique().tolist())
-    with st.container(border=True):
-        st.subheader("Filtros", anchor=False)
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            pessoa = st.multiselect("Pessoa (Execução/Apoio)", pessoas, default=[], key="task_filter_pessoa")
-            categoria = st.multiselect("Categoria", ENUMS["categoria_tarefa"], default=ENUMS["categoria_tarefa"], key="task_filter_categoria")
-        with col2:
-            identificacao = st.multiselect("Identificação", identificacoes, default=[], key="task_filter_identificacao")
-            status = st.multiselect("Status", ENUMS["status_tarefa"], default=["Atrasado", "Esta semana", "No prazo"], key="task_filter_status")
-        with col3:
-            apenas_ativas = st.toggle("Mostrar apenas ativas", value=True, key="task_filter_ativas")
-            incluir_historico = st.toggle("Incluir histórico (finalizadas)", value=False, key="task_filter_historico")
-    return {
-        "pessoa": pessoa,
-        "categoria": categoria,
-        "identificacao": identificacao,
-        "status": status,
-        "apenas_ativas": apenas_ativas,
-        "incluir_historico": incluir_historico,
-    }
-
-
-def render_new_task_form(df: pd.DataFrame):
-    with st.container(border=True):
-        st.subheader("Nova atividade", anchor=False)
-        identificacoes_existentes = sorted(df["identificacao"].dropna().astype(str).unique().tolist())
-        with st.form("nova_atividade_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                categoria = st.selectbox("Categoria", ENUMS["categoria_tarefa"])
-                sugestao_identificacao = st.selectbox("Identificação existente (opcional)", [""] + identificacoes_existentes)
-                atividade = st.text_input("Atividade")
-                prazo = st.date_input("Prazo", value=datetime.today())
-            with col2:
-                identificacao_nova = st.text_input("Nova identificação (opcional)")
-                execucao = st.selectbox("Execução", ENUMS["gestores"])
-                apoio = st.selectbox("Apoio (opcional)", [""] + ENUMS["gestores"])
-                finalizado = st.selectbox("Finalizado", ENUMS["finalizado_tarefa"], index=1)
-            observacao = st.text_area("Observação")
-            submitted = st.form_submit_button("Adicionar atividade", type="primary", use_container_width=True)
-
-        if submitted:
-            identificacao = identificacao_nova.strip() if identificacao_nova.strip() else sugestao_identificacao.strip()
-            if not identificacao:
-                st.warning("Informe uma Identificação existente ou preencha uma nova identificação.")
-            elif not atividade.strip():
-                st.warning("Informe a descrição da atividade antes de adicionar.")
-            else:
-                now = pd.Timestamp(datetime.now())
-                id_nums = (
-                    df["id"]
-                    .dropna()
-                    .astype(str)
-                    .str.extract(r"T-(\d+)", expand=False)
-                    .dropna()
-                    .astype(int)
-                )
-                next_id = int(id_nums.max()) + 1 if len(id_nums) else 1
-                new_row = pd.DataFrame([{
-                    "id": f"T-{next_id:04d}",
-                    "categoria": categoria,
-                    "identificacao": identificacao,
-                    "atividade": atividade.strip(),
-                    "prazo": pd.Timestamp(prazo),
-                    "execucao": execucao,
-                    "apoio": apoio if apoio else "",
-                    "finalizado": finalizado,
-                    "observacao": observacao.strip(),
-                    "data_criacao": now,
-                    "data_atualizacao": now,
-                }])
-                updated = pd.concat([df, new_row], ignore_index=True)
-                st.session_state.df_tasks = prepare_task_dataframe(updated)
-                st.success("Atividade adicionada com sucesso.")
+        st.write("")
+        c1, c2, c3 = st.columns([2, 1, 2])
+        new_member = c1.text_input("Novo membro", key="new_team_member", label_visibility="collapsed", placeholder="Digite o nome...")
+        if c2.button("Adicionar", use_container_width=True):
+            new_member = new_member.strip()
+            if new_member and new_member not in st.session_state.team_members:
+                st.session_state.team_members.append(new_member)
+                st.session_state.team_members.sort()
+                st.success(f"Membro '{new_member}' adicionado!")
                 st.rerun()
+            elif new_member in st.session_state.team_members:
+                st.warning("Este membro já existe.")
 
+def filter_tasks(df):
+    """Applies filters to the tasks dataframe."""
+    st.markdown("##### 🔍 Filtros de Visualização")
+    c1, c2, c3, c4 = st.columns(4)
+    
+    id_opts = sorted([str(x) for x in df["identificacao"].dropna().unique() if x])
+    exec_opts = st.session_state.team_members
+    cat_opts = ENUMS["categoria_tarefa"]
+    status_opts = ["Atrasado", "Esta semana", "No prazo", "Finalizado"]
 
-def render_grouped_task_dashboard(df: pd.DataFrame):
-    st.subheader("Painel operacional consolidado", anchor=False)
-    ativos = df[df["finalizado"] != "Sim"].copy()
-    if ativos.empty:
-        st.info("Não há atividades ativas para exibir.")
+    f_id = c1.multiselect("Identificação (Projeto)", id_opts)
+    f_exec = c2.multiselect("Executor / Apoio", exec_opts)
+    f_cat = c3.multiselect("Categoria", cat_opts)
+    f_status = c4.multiselect("Status", status_opts)
+        
+    mask = pd.Series(True, index=df.index)
+    if f_id:
+        mask = mask & df["identificacao"].isin(f_id)
+    if f_exec:
+        # Match Executor OR Apoio
+        mask = mask & (df["execucao"].isin(f_exec) | df["apoio"].isin(f_exec))
+    if f_cat:
+        mask = mask & df["categoria"].isin(f_cat)
+    if f_status:
+        mask = mask & df["status"].isin(f_status)
+        
+    return df[mask]
+
+def render_flow_panel(df_active):
+    """Renders the continuous operational panel for active tasks."""
+    if df_active.empty:
+        st.info("Nenhuma atividade ativa corresponde aos filtros no momento.")
         return
 
-    color_map = {"Atrasado": "🔴", "Esta semana": "🟡", "No prazo": "🟢"}
-    for identificacao, id_df in ativos.groupby("identificacao", sort=True):
-        status_counts = id_df["status"].value_counts()
-        resumo_status = " | ".join([f"{color_map.get(s, '⚪')} {s}: {n}" for s, n in status_counts.items()])
-        with st.expander(f"{identificacao} • {len(id_df)} atividade(s)"):
-            st.caption(resumo_status if resumo_status else "Sem status")
-            for categoria, cat_df in id_df.groupby("categoria", sort=True):
-                prazo_mais_proximo = cat_df["prazo"].min()
-                prazo_txt = pd.Timestamp(prazo_mais_proximo).strftime("%d/%m/%Y") if pd.notna(prazo_mais_proximo) else "-"
-                st.markdown(f"**{categoria}** — {len(cat_df)} atividade(s) • Prazo mais próximo: `{prazo_txt}`")
-                exibir = cat_df[["atividade", "prazo", "execucao", "apoio", "status", "observacao"]].copy()
-                exibir["status"] = exibir["status"].map(lambda s: f"{color_map.get(s, '⚪')} {s}")
-                st.dataframe(
-                    exibir,
-                    hide_index=True,
-                    use_container_width=True,
-                    column_config={"prazo": st.column_config.DateColumn("Prazo")},
-                )
+    # Sort by Prazo ascending. Naturally puts Atrasado first, then Esta semana, then No prazo
+    df_active = df_active.sort_values(by="prazo", ascending=True)
+    
+    # Group by Identificação
+    grouped = df_active.groupby("identificacao")
+    
+    for ident in sorted(grouped.groups.keys()):
+        group_df = grouped.get_group(ident)
+        
+        # Group Header
+        st.markdown(f"<h4 style='margin-bottom: 5px; margin-top: 20px;'>📁 {ident} <span style='font-size: 14px; font-weight: normal; color: gray;'>({len(group_df)} atividades)</span></h4>", unsafe_allow_html=True)
+        
+        html_rows = []
+        for _, row in group_df.iterrows():
+            status = row.get("status", "")
+            
+            # Status Badge Styling
+            if status == "Atrasado":
+                color = "rgba(255, 75, 75, 0.15)"
+                text_color = "#ff4b4b"
+                border_color = "#ff4b4b"
+            elif status == "Esta semana":
+                color = "rgba(250, 202, 43, 0.15)"
+                text_color = "#b28d0e" 
+                border_color = "#faca2b"
+            else:
+                color = "rgba(9, 171, 59, 0.15)"
+                text_color = "#09ab3b"
+                border_color = "#09ab3b"
+            
+            badge = f"<span style='background-color: {color}; color: {text_color}; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 800; text-transform: uppercase;'>{status}</span>"
+            
+            # Field parsing
+            prazo_str = pd.to_datetime(row['prazo']).strftime('%d/%m/%Y') if pd.notna(row['prazo']) else "-"
+            apoio_str = f" | <b>Apoio:</b> {row['apoio']}" if pd.notna(row.get('apoio')) and str(row.get('apoio')).strip() else ""
+            obs_str = f"<div style='color: gray; font-size: 13px; margin-top: 4px;'><i>Obs: {row.get('observacao', '')}</i></div>" if pd.notna(row.get('observacao')) and str(row.get('observacao')).strip() else ""
+            
+            # Row HTML Container
+            html_rows.append(f"""
+            <div style='border-left: 4px solid {border_color}; margin-bottom: 8px; background-color: var(--secondary-background-color); padding: 12px 16px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);'>
+                <div style='margin-bottom: 6px;'>{badge} <strong style='font-size: 15px; margin-left: 8px;'>{row['atividade']}</strong></div>
+                <div style='font-size: 14px; color: var(--text-color);'>
+                    <b>Prazo:</b> {prazo_str} | <b>Execução:</b> {row['execucao']}{apoio_str} | <b>Cat:</b> {row['categoria']}
+                </div>
+                {obs_str}
+            </div>
+            """)
+        
+        st.markdown("".join(html_rows), unsafe_allow_html=True)
 
-
-def render_task_history(df: pd.DataFrame):
-    historico = df[df["finalizado"] == "Sim"].copy()
-    with st.expander(f"Histórico de atividades finalizadas ({len(historico)})", icon=":material/history:"):
-        if historico.empty:
-            st.caption("Ainda não há atividades finalizadas.")
-        else:
-            st.dataframe(
-                historico[["id", "categoria", "identificacao", "atividade", "prazo", "execucao", "apoio", "observacao", "data_atualizacao"]],
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "prazo": st.column_config.DateColumn("Prazo"),
-                    "data_atualizacao": st.column_config.DatetimeColumn("Última atualização", format="DD/MM/YYYY HH:mm"),
-                },
-            )
-
-
-def _financiamento_tag_class(financ: str) -> str:
-    if pd.isna(financ):
-        return "pse-tag"
-    f = financ.lower()
-    if "embrapii" in f:
-        return "pse-tag embrapii"
-    if "diret" in f:
-        return "pse-tag direto"
-    return "pse-tag fomento"
 
 # ==========================================
-# 6. PAGE: SALES PIPELINE (Vendas)
+# 5. PAGES RENDERING FUNCTIONS
 # ==========================================
+
 def render_sales_pipeline():
-    st.header("Sales pipeline", anchor=False)
-    st.caption("Manage proposals from prospecting through contracting. Edit data inline; charts update instantly.")
-
+    st.title("📈 Sales Pipeline (Funil de Vendas)")
+    st.markdown("Manage proposals, track budget extrapolations, and convert to active projects.")
+    
     df = st.session_state.df_proposals
 
-    # ── Sidebar filters ──
-    with st.sidebar:
-        st.subheader("Filtros de vendas", anchor=False)
-        sel_coord = st.selectbox(
-            "Coordenação",
-            ["Todas"] + ENUMS["coordenacoes"],
-            key="vendas_coord",
-        )
-        sel_linha = st.selectbox(
-            "Linha de pesquisa",
-            ["Todas"] + ENUMS["linhas_pesquisa_short"],
-            key="vendas_linha",
-        )
-        sel_tipo = st.selectbox(
-            "Tipo de projeto",
-            ["Todos"] + ENUMS["tipo_projeto"],
-            key="vendas_tipo",
-        )
+    c1, c2, c3, c4 = st.columns(4)
+    active_mask = df["etapa_atual"].isin(["Prospecção", "Negociação", "Contratação"])
+    
+    c1.metric("Propostas Ativas", len(df[active_mask]))
+    c2.metric("Contratadas", len(df[df["etapa_atual"] == "Contratado"]))
+    c3.metric("Orçamento Total (Ativo)", f"R$ {df[active_mask]['orcamento_total'].sum():,.2f}")
+    
+    ticket_medio = df["orcamento_cpq"].sum() / df["meses_execucao_cpq"].sum() if df["meses_execucao_cpq"].sum() > 0 else 0
+    c4.metric("Ticket Médio (CPQ)", f"R$ {ticket_medio:,.2f} / mês")
 
-    # Apply filters
-    mask = pd.Series(True, index=df.index)
-    if sel_coord != "Todas":
-        mask &= df["coordenacao_responsavel"] == sel_coord
-    if sel_linha != "Todas":
-        mask &= df["linha_pesquisa_cpq"] == sel_linha
-    if sel_tipo != "Todos":
-        mask &= df["tipo_projeto"] == sel_tipo
-    fdf = df[mask]
+    st.divider()
 
-    # ── KPI row ──
-    active_mask = fdf["etapa_atual"].isin(["Prospecção", "Negociação", "Contratação"])
-    active_df = fdf[active_mask]
-    contracted_df = fdf[fdf["etapa_atual"] == "Contratado"]
-    refused_df = fdf[fdf["etapa_atual"] == "Recusado"]
+    col_chart, col_data = st.columns([1, 1.5])
+    
+    with col_chart:
+        st.subheader("Funnel Visualization")
+        funnel_data = df[active_mask].groupby("etapa_atual").agg(
+            count=("codinome_projeto", "count"),
+            orcamento=("orcamento_total", "sum")
+        ).reindex(["Prospecção", "Negociação", "Contratação"]).reset_index()
 
-    total_active_budget = active_df["orcamento_total"].sum()
-    total_contracted = contracted_df["orcamento_total"].sum()
-    n_active = len(active_df)
-    n_contracted = len(contracted_df)
-    n_refused = len(refused_df)
-    taxa_contrat = n_contracted / (n_contracted + n_refused) if (n_contracted + n_refused) > 0 else 0
-    meses_sum = active_df["meses_execucao_cpq"].sum()
-    ticket_medio = active_df["orcamento_cpq"].sum() / meses_sum if meses_sum > 0 else 0
+        fig = go.Figure(go.Funnel(
+            y=funnel_data["etapa_atual"],
+            x=funnel_data["count"],
+            textinfo="value+percent initial",
+            customdata=funnel_data["orcamento"],
+            hovertemplate="Stage: %{y}<br>Count: %{x}<br>Budget: R$ %{customdata:,.2f}<extra></extra>",
+            marker={"color": ["#4C78A8", "#F58518", "#54A24B"]}
+        ))
+        fig.update_layout(margin=dict(l=20, r=20, t=20, b=20), paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
 
-    with st.container(horizontal=True):
-        st.metric("Propostas ativas", n_active, border=True)
-        st.metric("Contratadas", n_contracted, border=True)
-        st.metric("Carteira ativa", f"R$ {total_active_budget:,.0f}", border=True)
-        st.metric("Ticket médio CPQ", f"R$ {ticket_medio:,.0f}/mês", border=True)
-        st.metric("Taxa de contratação", f"{taxa_contrat:.0%}", border=True)
-
-    # ── FUNNEL CARDS (premium horizontal layout) ──
-    st.subheader("Funil de vendas", anchor=False)
-
-    funnel_stages = ["Prospecção", "Negociação", "Contratação"]
-    cols = st.columns(len(funnel_stages), border=True)
-
-    for i, stage in enumerate(funnel_stages):
-        stage_df = fdf[fdf["etapa_atual"] == stage].sort_values("orcamento_total", ascending=False)
-        css_cls = STAGE_CSS_CLASS[stage]
-        stage_total = stage_df["orcamento_total"].sum()
-
-        with cols[i]:
-            # Stage header via scoped HTML
-            st.html(
-                f'<div class="pse-stage-header {css_cls}">'
-                f'{stage}<span class="pse-count">{len(stage_df)}</span></div>'
-            )
-
-            if stage_df.empty:
-                st.html('<div class="pse-empty">Nenhuma proposta neste estágio</div>')
-            else:
-                # Budget total for the stage
-                st.html(f'<div class="pse-stage-total">R$ {stage_total:,.0f}</div>')
-                # Render each card
-                for _, row in stage_df.iterrows():
-                    tag_cls = _financiamento_tag_class(row.get("financiamento"))
-                    financ_label = row.get("financiamento", "")
-                    if pd.isna(financ_label):
-                        financ_label = ""
-                    tipo_label = row.get("tipo_projeto", "")
-                    if pd.isna(tipo_label):
-                        tipo_label = ""
-
-                    card_html = f"""
-                    <div class="pse-card">
-                        <div class="pse-card-top">
-                            <img class="pse-card-logo"
-                                 src="{row['logo_url']}"
-                                 alt="{row['cliente']}"
-                                 onerror="this.style.display='none'">
-                            <div class="pse-card-budget">R$ {row['orcamento_total']:,.0f}</div>
-                        </div>
-                        <div class="pse-card-project">{row['codinome_projeto']}</div>
-                        <div class="pse-card-client">{row['cliente']}</div>
-                        <div class="pse-card-meta">
-                            <span class="{tag_cls}">{financ_label}</span>
-                            <span class="pse-tag">{tipo_label}</span>
-                        </div>
-                    </div>
-                    """
-                    st.html(card_html)
-
-    # ── Aggregate charts ──
-    chart_left, chart_right = st.columns(2)
-
-    with chart_left:
-        with st.container(border=True):
-            st.subheader("Propostas por linha de pesquisa", anchor=False)
-            by_linha = (
-                active_df.groupby("linha_pesquisa_cpq")
-                .agg(count=("codinome_projeto", "count"), budget=("orcamento_total", "sum"))
-                .reset_index()
-                .sort_values("budget", ascending=True)
-            )
-            if not by_linha.empty:
-                fig = px.bar(
-                    by_linha, x="budget", y="linha_pesquisa_cpq",
-                    orientation="h", text="count",
-                    labels={"budget": "Orçamento (R$)", "linha_pesquisa_cpq": ""},
-                )
-                fig.update_traces(textposition="inside", marker_color="#2b5ea7")
-                fig.update_layout(
-                    margin=dict(l=0, r=0, t=10, b=0), height=300,
-                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                    showlegend=False,
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.caption("Sem dados para exibir.")
-
-    with chart_right:
-        with st.container(border=True):
-            st.subheader("Funil agregado", anchor=False)
-            funnel_agg = (
-                fdf[fdf["etapa_atual"].isin(funnel_stages)]
-                .groupby("etapa_atual")
-                .agg(n=("codinome_projeto", "count"), total=("orcamento_total", "sum"))
-                .reindex(funnel_stages)
-                .reset_index()
-            )
-            if not funnel_agg.empty:
-                fig = go.Figure(go.Funnel(
-                    y=funnel_agg["etapa_atual"], x=funnel_agg["n"],
-                    textinfo="value+percent initial",
-                    customdata=funnel_agg["total"],
-                    hovertemplate="%{y}<br>Propostas: %{x}<br>R$ %{customdata:,.0f}<extra></extra>",
-                    marker=dict(color=["#2b5ea7", "#a7862b", "#2ba75e"]),
-                ))
-                fig.update_layout(
-                    margin=dict(l=0, r=0, t=10, b=0), height=300,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.caption("Sem dados para exibir.")
-
-    # ── Editable table ──
-    with st.expander("Detalhamento e edição de propostas", icon=":material/edit:"):
-        edited = st.data_editor(
+    with col_data:
+        st.subheader("Data Management")
+        st.info("💡 Edit cells below to update the database and charts instantly.")
+        
+        edited_df = st.data_editor(
             df,
             column_config={
-                "etapa_atual": st.column_config.SelectboxColumn("Etapa", options=ENUMS["etapa_proposta"], required=True),
-                "coordenacao_responsavel": st.column_config.SelectboxColumn("Coord.", options=ENUMS["coordenacoes"]),
-                "linha_pesquisa_cpq": st.column_config.SelectboxColumn("Linha pesq.", options=ENUMS["linhas_pesquisa_short"]),
-                "tipo_projeto": st.column_config.SelectboxColumn("Tipo", options=ENUMS["tipo_projeto"]),
-                "financiamento": st.column_config.SelectboxColumn("Financ.", options=ENUMS["financiamento"]),
-                "orcamento_total": st.column_config.NumberColumn("Orçamento total (R$)", format="R$ %.0f"),
-                "orcamento_cpq": st.column_config.NumberColumn("Orçamento CPQ (R$)", format="R$ %.0f"),
-                "logo_url": None,  # hide from editor
+                "etapa_atual": st.column_config.SelectboxColumn("Etapa Atual", options=ENUMS["etapa_proposta"], required=True),
+                "orcamento_total": st.column_config.NumberColumn("Orçamento (R$)", format="$ %d"),
+                "meses_execucao_total": st.column_config.NumberColumn("Meses")
             },
             use_container_width=True,
             hide_index=True,
-            num_rows="dynamic",
-            key="proposals_editor",
+            num_rows="dynamic"
         )
-        st.session_state.df_proposals = edited
+        st.session_state.df_proposals = edited_df
 
-
-# ==========================================
-# 7. PAGE: EXECUTION PIPELINE (Projetos)
-# ==========================================
 def render_execution_pipeline():
-    st.header("Execution pipeline", anchor=False)
-    st.caption("Track project health, financial execution, and timelines.")
+    st.title("🚀 Execution Pipeline (Funil de Projetos)")
+    st.markdown("Track active project health, financial execution, and schedules.")
 
     df = st.session_state.df_projects
     active_mask = df["status_projeto"].isin(["Inicialização", "Execução", "Finalização"])
-    active_df = df[active_mask]
 
-    carteira = active_df["orcamento_atualizado"].sum()
-    receita_ext = active_df["receita_externa_atualizada"].sum()
-    competencia = active_df["competencia_acumulada"].sum()
-    realizacao = (competencia / receita_ext * 100) if receita_ext > 0 else 0
-    receita_missing = receita_ext - active_df["resgates_acumulados"].sum()
+    c1, c2, c3 = st.columns(3)
+    carteira_ativa = df[active_mask]["orcamento_atualizado"].sum()
+    receita_externa = df[active_mask]["receita_externa_atualizada"].sum()
+    competencia = df[active_mask]["competencia_acumulada"].sum()
+    
+    c1.metric("Carteira Ativa (Orçamento)", f"R$ {carteira_ativa:,.2f}")
+    c2.metric("Projetos Ativos", len(df[active_mask]))
+    
+    realizacao_pct = (competencia / receita_externa * 100) if receita_externa > 0 else 0
+    c3.metric("Realização Financeira Geral", f"{realizacao_pct:.1f}%", help="Competência / Receita Externa")
 
-    with st.container(horizontal=True):
-        st.metric("Carteira ativa", f"R$ {carteira:,.0f}", border=True)
-        st.metric("Projetos ativos", len(active_df), border=True)
-        st.metric("Realização financeira", f"{realizacao:.1f}%", border=True,
-                   help="Competência acumulada / Receita externa")
-        st.metric("Receita a realizar", f"R$ {receita_missing:,.0f}", border=True)
+    st.divider()
 
-    # Gantt
-    with st.container(border=True):
-        st.subheader("Timeline de projetos", anchor=False)
-        gantt_df = df.dropna(subset=["inicio_escopo_tecnico", "termino_previsto"])
-        if not gantt_df.empty:
-            fig = px.timeline(
-                gantt_df, x_start="inicio_escopo_tecnico", x_end="termino_previsto",
-                y="codinome_projeto", color="linha_pesquisa_cpq",
-                hover_data=["cliente", "status_projeto"],
-            )
-            fig.update_yaxes(autorange="reversed")
-            fig.update_layout(
-                margin=dict(l=0, r=0, t=10, b=0), height=400,
-                paper_bgcolor="rgba(0,0,0,0)", legend_title_text="",
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.caption("Sem datas disponíveis para timeline.")
-
-    # Per-project financial health
-    with st.container(border=True):
-        st.subheader("Saúde financeira por projeto", anchor=False)
-        health = active_df.copy()
-        health["realizacao_pct"] = (health["competencia_acumulada"] / health["receita_externa_atualizada"]).fillna(0)
-        health["receita_faltante"] = (health["receita_externa_atualizada"] - health["resgates_acumulados"]).fillna(0)
-        display_cols = ["codinome_projeto", "cliente", "status_projeto", "orcamento_atualizado",
-                        "receita_externa_atualizada", "competencia_acumulada", "realizacao_pct", "receita_faltante"]
-        st.dataframe(
-            health[display_cols],
-            column_config={
-                "orcamento_atualizado": st.column_config.NumberColumn("Orçamento", format="R$ %.0f"),
-                "receita_externa_atualizada": st.column_config.NumberColumn("Receita ext.", format="R$ %.0f"),
-                "competencia_acumulada": st.column_config.NumberColumn("Competência", format="R$ %.0f"),
-                "realizacao_pct": st.column_config.ProgressColumn("Realização", min_value=0, max_value=1.5, format="%.0f%%"),
-                "receita_faltante": st.column_config.NumberColumn("Receita faltante", format="R$ %.0f"),
-            },
-            hide_index=True, use_container_width=True,
+    st.subheader("Project Timeline (Gantt)")
+    timeline_df = df.dropna(subset=["inicio_escopo_tecnico", "termino_previsto"])
+    if not timeline_df.empty:
+        fig = px.timeline(
+            timeline_df, 
+            x_start="inicio_escopo_tecnico", 
+            x_end="termino_previsto", 
+            y="codinome_projeto",
+            color="linha_pesquisa_cpq",
+            title="Schedules by Research Line (Linha de Pesquisa)"
         )
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("No date data available for timeline.")
 
-    with st.expander("Editar dados de projetos", icon=":material/edit:"):
-        edited = st.data_editor(
-            df,
-            column_config={
-                "status_projeto": st.column_config.SelectboxColumn("Status", options=ENUMS["status_projeto"]),
-                "orcamento_atualizado": st.column_config.NumberColumn("Orçamento", format="R$ %.0f"),
-                "inicio_escopo_tecnico": st.column_config.DateColumn("Início"),
-                "termino_previsto": st.column_config.DateColumn("Término"),
-            },
-            use_container_width=True, hide_index=True, num_rows="dynamic",
-            key="projects_editor",
-        )
-        st.session_state.df_projects = edited
+    st.subheader("Project Execution Data")
+    edited_df = st.data_editor(
+        df,
+        column_config={
+            "status_projeto": st.column_config.SelectboxColumn("Status", options=ENUMS["status_projeto"]),
+            "orcamento_atualizado": st.column_config.NumberColumn("Orçamento", format="$ %d"),
+            "inicio_escopo_tecnico": st.column_config.DateColumn("Início"),
+            "termino_previsto": st.column_config.DateColumn("Término")
+        },
+        use_container_width=True, hide_index=True
+    )
+    st.session_state.df_projects = edited_df
 
 
-# ==========================================
-# 8. PAGE: WEEKLY PLANNER (Tarefas)
-# ==========================================
 def render_weekly_tracker():
-    st.header("Planejamento semanal", anchor=False)
-    st.caption("Planejamento operacional da equipe técnica com foco em execução, visibilidade de prazos e histórico.")
+    st.title("✅ Planejamento Semanal")
+    st.markdown("Painel operacional contínuo para acompanhamento e gestão de equipe.")
 
-    st.session_state.df_tasks = prepare_task_dataframe(st.session_state.df_tasks)
-    df = st.session_state.df_tasks.copy()
+    # Initialize dynamic team members based on data
+    init_team_members()
+    df = st.session_state.df_tasks
 
-    render_task_kpis(df)
-    filtros = render_task_filters(df)
-    render_new_task_form(df)
+    # Metrics Summary
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("🔴 Atrasadas", len(df[df["status"] == "Atrasado"]))
+    c2.metric("🟡 Esta Semana", len(df[df["status"] == "Esta semana"]))
+    c3.metric("🟢 No Prazo", len(df[df["status"] == "No prazo"]))
+    c4.metric("⚪ Finalizadas", len(df[df["status"] == "Finalizado"]))
 
-    mask = df["categoria"].isin(filtros["categoria"]) & df["status"].isin(filtros["status"])
-    if filtros["identificacao"]:
-        mask &= df["identificacao"].isin(filtros["identificacao"])
-    if filtros["pessoa"]:
-        mask &= (df["execucao"].isin(filtros["pessoa"]) | df["apoio"].isin(filtros["pessoa"]))
-    if filtros["apenas_ativas"]:
-        mask &= df["finalizado"] != "Sim"
-    if not filtros["incluir_historico"] and not filtros["apenas_ativas"]:
-        mask &= df["finalizado"] != "Sim"
-    fdf = df[mask].copy()
+    st.divider()
 
-    col_chart, col_resumo = st.columns([1, 1])
-    with col_chart:
-        with st.container(border=True):
-            st.subheader("Distribuição por categoria e status", anchor=False)
-            chart_src = (
-                fdf.groupby(["categoria", "status"]).size()
-                .reset_index(name="quantidade")
-            )
-            if not chart_src.empty:
-                fig = px.bar(
-                    chart_src,
-                    x="quantidade",
-                    y="categoria",
-                    color="status",
-                    orientation="h",
-                    barmode="stack",
-                    color_discrete_map={
-                        "Atrasado": "#C00000",
-                        "Esta semana": "#BF8F00",
-                        "No prazo": "#008A3B",
-                        "Finalizado": "#808080",
-                    },
-                    labels={"quantidade": "Atividades", "categoria": ""},
-                )
-                fig.update_layout(
-                    margin=dict(l=0, r=0, t=10, b=0),
-                    height=280,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    legend_title_text="",
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Sem dados para os filtros selecionados.")
+    # Pre-render filters
+    filtered_df = filter_tasks(df)
+    
+    st.divider()
 
-    with col_resumo:
-        with st.container(border=True):
-            st.subheader("Resumo por executor", anchor=False)
-            resumo_exec = (
-                fdf[fdf["finalizado"] != "Sim"]
-                .groupby("execucao")
-                .size()
-                .reset_index(name="atividades")
-                .sort_values("atividades", ascending=False)
-            )
-            if resumo_exec.empty:
-                st.caption("Sem atividades ativas para resumir.")
-            else:
-                st.dataframe(resumo_exec, hide_index=True, use_container_width=True)
+    # Dynamic Team Management
+    render_team_management()
 
-    render_grouped_task_dashboard(fdf if filtros["incluir_historico"] else fdf[fdf["finalizado"] != "Sim"])
+    # Collapsible Editor / Creator
+    with st.expander("📝 Nova atividade / Editar atividades", expanded=False):
+        st.info("Utilize a tabela abaixo para editar tarefas existentes ou adicionar uma nova linha ao final.")
+        
+        display_cols = ["categoria", "identificacao", "atividade", "prazo", "execucao", "apoio", "observacao", "finalizado", "status_ui"]
+        
+        # Ensure all columns exist to prevent KeyError
+        for col in display_cols:
+            if col not in df.columns:
+                df[col] = None
 
-    with st.expander("Detalhamento e manutenção das atividades", icon=":material/edit:"):
-        edited = st.data_editor(
-            df[["id", "categoria", "identificacao", "atividade", "prazo", "execucao", "apoio", "finalizado", "observacao"]],
+        edited_df = st.data_editor(
+            df[display_cols],
             column_config={
                 "categoria": st.column_config.SelectboxColumn("Categoria", options=ENUMS["categoria_tarefa"]),
-                "finalizado": st.column_config.SelectboxColumn("Finalizado", options=ENUMS["finalizado_tarefa"]),
+                "finalizado": st.column_config.SelectboxColumn("Finalizado?", options=["Sim", "Não"]),
                 "prazo": st.column_config.DateColumn("Prazo"),
-                "id": st.column_config.TextColumn("ID", disabled=True),
+                "execucao": st.column_config.SelectboxColumn("Execução", options=st.session_state.team_members),
+                "apoio": st.column_config.SelectboxColumn("Apoio", options=st.session_state.team_members),
+                "observacao": st.column_config.TextColumn("Observação"),
+                "status_ui": st.column_config.TextColumn("Status Automático", disabled=True)
             },
             use_container_width=True,
             hide_index=True,
-            num_rows="dynamic",
-            key="tasks_editor",
+            num_rows="dynamic"
         )
-        edited["data_atualizacao"] = pd.Timestamp(datetime.now())
-        edited = edited.merge(df[["id", "data_criacao"]], on="id", how="left")
-        st.session_state.df_tasks = prepare_task_dataframe(edited)
+        
+        # Sync changes back to main dataframe safely
+        if not edited_df.equals(df[display_cols]):
+            for col in display_cols:
+                if col != "status_ui":
+                    st.session_state.df_tasks[col] = edited_df[col]
+            st.rerun()
 
-    render_task_history(st.session_state.df_tasks)
+    st.divider()
+
+    # Continuous Operational Panel
+    st.subheader("Painel Operacional Consolidado")
+    
+    df_active = filtered_df[filtered_df["finalizado"] != "Sim"]
+    df_finished = filtered_df[filtered_df["finalizado"] == "Sim"]
+    
+    # Render main flowing panel
+    render_flow_panel(df_active)
+
+    st.write("")
+    
+    # Finished Tasks History
+    with st.expander("🗄️ Histórico de atividades finalizadas", expanded=False):
+        if df_finished.empty:
+            st.info("Nenhuma atividade finalizada corresponde aos filtros.")
+        else:
+            st.dataframe(
+                df_finished[["identificacao", "atividade", "prazo", "execucao", "apoio", "categoria"]].sort_values("prazo", ascending=False), 
+                use_container_width=True, 
+                hide_index=True
+            )
 
 
-# ==========================================
-# 9. PAGE: TEAM ALLOCATION (Notion)
-# ==========================================
 def render_team_allocation():
-    st.header("Team allocation", anchor=False)
-    st.caption("Resource bandwidth and project assignments sourced from Notion export.")
+    st.title("🧑‍🤝‍🧑 Team Allocation (Notion Data)")
+    st.markdown("Visualize resource bandwidth, member availability, and project assignments.")
 
     df = st.session_state.df_allocation
-
-    with st.container(border=True):
-        st.subheader("Allocation timeline", anchor=False)
-        clean = df.dropna(subset=["data_inicio", "data_fim"])
-        if not clean.empty:
-            fig = px.timeline(
-                clean, x_start="data_inicio", x_end="data_fim",
-                y="executor", color="status_notion", hover_name="projeto",
-                color_discrete_map={
-                    "Em execução": "#2196F3", "Aguardando": "#FFC107",
-                    "Finalizado": "#9E9E9E", "Cancelado": "#F44336",
-                },
-            )
-            fig.update_yaxes(autorange="reversed")
-            fig.update_layout(
-                margin=dict(l=0, r=0, t=10, b=0), height=450,
-                paper_bgcolor="rgba(0,0,0,0)", legend_title_text="",
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    # Workload summary
-    with st.container(border=True):
-        st.subheader("Carga por executor", anchor=False)
-        active_alloc = df[df["status_notion"].isin(["Em execução", "Aguardando"])]
-        if not active_alloc.empty:
-            load_summary = active_alloc.groupby("executor").size().reset_index(name="projetos_ativos").sort_values("projetos_ativos", ascending=True)
-            fig = px.bar(
-                load_summary, x="projetos_ativos", y="executor",
-                orientation="h", text="projetos_ativos",
-                labels={"projetos_ativos": "Projetos ativos", "executor": ""},
-            )
-            fig.update_traces(marker_color="#2196F3", textposition="inside")
-            fig.update_layout(
-                margin=dict(l=0, r=0, t=10, b=0), height=300,
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                showlegend=False,
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    with st.expander("Editar alocações", icon=":material/edit:"):
-        edited = st.data_editor(
-            df,
-            column_config={
-                "status_notion": st.column_config.SelectboxColumn("Status", options=ENUMS["status_notion"]),
-                "executor": st.column_config.SelectboxColumn("Executor", options=ENUMS["gestores"]),
-                "data_inicio": st.column_config.DateColumn("Início"),
-                "data_fim": st.column_config.DateColumn("Fim"),
-            },
-            use_container_width=True, hide_index=True, num_rows="dynamic",
-            key="alloc_editor",
+    
+    st.subheader("Allocation Gantt Chart")
+    
+    clean_df = df.dropna(subset=["data_inicio", "data_fim"])
+    if not clean_df.empty:
+        fig = px.timeline(
+            clean_df,
+            x_start="data_inicio",
+            x_end="data_fim",
+            y="executor",
+            color="status_notion",
+            hover_name="projeto",
+            color_discrete_map={
+                "Em execução": "#2196F3",
+                "Aguardando": "#FFC107",
+                "Finalizado": "#9E9E9E",
+                "Cancelado": "#F44336",
+            }
         )
-        st.session_state.df_allocation = edited
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", height=500)
+        st.plotly_chart(fig, use_container_width=True)
 
+    st.subheader("Resource Database Editor")
+    edited_df = st.data_editor(
+        df,
+        column_config={
+            "status_notion": st.column_config.SelectboxColumn("Status", options=ENUMS["status_notion"]),
+            "executor": st.column_config.SelectboxColumn("Executor", options=ENUMS["gestores"]),
+            "data_inicio": st.column_config.DateColumn("Início"),
+            "data_fim": st.column_config.DateColumn("Fim")
+        },
+        use_container_width=True, hide_index=True, num_rows="dynamic"
+    )
+    st.session_state.df_allocation = edited_df
 
 # ==========================================
-# 10. SIDEBAR NAV & ROUTING
+# 6. SIDEBAR NAVIGATION & ROUTING
 # ==========================================
-PAGES = {
-    ":material/monitoring: Sales pipeline": render_sales_pipeline,
-    ":material/rocket_launch: Execution pipeline": render_execution_pipeline,
-    ":material/checklist: Planejamento semanal": render_weekly_tracker,
-    ":material/group: Team allocation": render_team_allocation,
-}
-
 with st.sidebar:
-    st.title("PSE Dashboard", anchor=False)
-    st.caption("Proof of Concept — v0.2")
-    page = st.radio("Navegação", list(PAGES.keys()), label_visibility="collapsed")
+    st.image("https://streamlit.io/images/brand/streamlit-mark-color.png", width=50)
+    st.title("Lifecycle PoC")
+    st.markdown("Consolidated view of 4 legacy tools.")
+    
+    page = st.radio(
+        "Navigation Menu",
+        options=[
+            "📈 Sales Pipeline (Vendas)",
+            "🚀 Execution Pipeline (Projetos)",
+            "✅ Planejamento Semanal (Tarefas)",
+            "🧑‍🤝‍🧑 Team Allocation (Notion)"
+        ]
+    )
+    
     st.divider()
-    if st.button("Resetar dados", icon=":material/refresh:", use_container_width=True):
+    st.markdown("⚙️ **System Actions**")
+    if st.button("Reset Database to Default"):
         reset_database()
-    st.caption("Dados em session state. Refresh do browser restaura os valores originais.")
+    st.caption("Data is stored in Session State. Refreshing the browser or clicking Reset will restore original mock data.")
 
-# Route
-PAGES[page]()
+# Route to the correct page
+if page == "📈 Sales Pipeline (Vendas)":
+    render_sales_pipeline()
+elif page == "🚀 Execution Pipeline (Projetos)":
+    render_execution_pipeline()
+elif page == "✅ Planejamento Semanal (Tarefas)":
+    render_weekly_tracker()
+elif page == "🧑‍🤝‍🧑 Team Allocation (Notion)":
+    render_team_allocation()
