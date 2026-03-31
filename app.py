@@ -1,10 +1,10 @@
- import streamlit as st
- import pandas as pd
- import numpy as np
- import plotly.express as px
- import plotly.graph_objects as go
- from datetime import datetime, timedelta
- import random
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import random
  
  # ==========================================
  # 0. PAGE CONFIG (must be first st call)
