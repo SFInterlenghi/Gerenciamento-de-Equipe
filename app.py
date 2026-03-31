@@ -1,146 +1,86 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import random
-
-# ==========================================
-# 0. PAGE CONFIG (must be first st call)
-# ==========================================
-st.set_page_config(
-    page_title="PSE — Lifecycle Dashboard",
-    layout="wide",
-    page_icon=":material/analytics:",
-)
-
-# ==========================================
-# 1. GLOBAL CSS — scoped to our own classes
-# ==========================================
-# No targeting of Streamlit internals (.stHorizontalBlock, .st-emotion-cache-*).
-# All selectors use our own `.pse-*` namespace for forward-compatibility.
-st.html("""
-<style>
-/* ── Funnel stage header ── */
-.pse-stage-header {
-    text-align: center;
-    font-size: 0.85rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    padding: 10px 0;
-    border-radius: 8px;
-    margin-bottom: 12px;
-}
-.pse-stage-header.prospeccao {
-    background: linear-gradient(135deg, #1e3a5f, #2b5ea7);
-    color: #e0ecff;
-}
-.pse-stage-header.negociacao {
-    background: linear-gradient(135deg, #5f4b1e, #a7862b);
-    color: #fff5d6;
-}
-.pse-stage-header.contratacao {
-    background: linear-gradient(135deg, #1e5f3a, #2ba75e);
-    color: #d6ffe5;
-}
-
-/* ── Project card ── */
-.pse-card {
-    background: var(--secondary-background-color, #f8f9fb);
-    border-radius: 10px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-    border-left: 5px solid var(--primary-color, #0969da);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-    cursor: default;
-}
-.pse-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-}
-.pse-card-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-    gap: 8px;
-}
-.pse-card-logo {
-    height: 28px;
-    max-width: 80px;
-    object-fit: contain;
-    border-radius: 4px;
-    flex-shrink: 0;
-}
-.pse-card-budget {
-    font-size: 0.92rem;
-    font-weight: 700;
-    color: #1a7f37;
-    white-space: nowrap;
-}
-.pse-card-project {
-    font-weight: 600;
-    font-size: 0.95rem;
-    margin-bottom: 2px;
-}
-.pse-card-client {
-    font-size: 0.82rem;
-    opacity: 0.65;
-}
-.pse-card-meta {
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-}
-.pse-tag {
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-weight: 500;
-    background: rgba(128,128,128,0.12);
-}
-.pse-tag.fomento   { background: #dbeafe; color: #1e40af; }
-.pse-tag.direto    { background: #fef3c7; color: #92400e; }
-.pse-tag.embrapii  { background: #d1fae5; color: #065f46; }
-
-/* ── Empty stage ── */
-.pse-empty {
-    text-align: center;
-    padding: 24px 12px;
-    opacity: 0.45;
-    font-size: 0.85rem;
-}
-
-/* ── Stage count badge ── */
-.pse-count {
-    display: inline-block;
-    background: rgba(255,255,255,0.25);
-    padding: 1px 10px;
-    border-radius: 12px;
-    font-size: 0.78rem;
-    margin-left: 6px;
-    font-weight: 400;
-}
-
-/* ── Stage total (budget bar) ── */
-.pse-stage-total {
-    text-align: center;
-    font-size: 0.78rem;
-    font-weight: 600;
-    padding: 6px 0 2px;
-    opacity: 0.7;
-}
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/app.py b/app.py
-index 712dad67eecea87f62b2db4f64e72626f18a88df..016281a890f81615f7612609ebf1e354cc673b41 100644
+index 712dad67eecea87f62b2db4f64e72626f18a88df..81a1bc5711aa03fb30d1ae60c99f0a8bc2338bbc 100644
 --- a/app.py
 +++ b/app.py
-@@ -136,51 +136,52 @@ st.html("""
+@@ -1,48 +1,48 @@
+ import streamlit as st
+ import pandas as pd
+ import numpy as np
+ import plotly.express as px
+ import plotly.graph_objects as go
+ from datetime import datetime, timedelta
+ import random
+ 
+ # ==========================================
+ # 0. PAGE CONFIG (must be first st call)
+ # ==========================================
+ st.set_page_config(
+     page_title="PSE — Lifecycle Dashboard",
+     layout="wide",
+     page_icon=":material/analytics:",
+ )
+ 
+ # ==========================================
+ # 1. GLOBAL CSS — scoped to our own classes
+ # ==========================================
+ # No targeting of Streamlit internals (.stHorizontalBlock, .st-emotion-cache-*).
+ # All selectors use our own `.pse-*` namespace for forward-compatibility.
+-st.html("""
++GLOBAL_CSS = '''
+ <style>
+ /* ── Funnel stage header ── */
+ .pse-stage-header {
+     text-align: center;
+     font-size: 0.85rem;
+     font-weight: 700;
+     letter-spacing: 0.04em;
+     text-transform: uppercase;
+     padding: 10px 0;
+     border-radius: 8px;
+     margin-bottom: 12px;
+ }
+ .pse-stage-header.prospeccao {
+     background: linear-gradient(135deg, #1e3a5f, #2b5ea7);
+     color: #e0ecff;
+ }
+ .pse-stage-header.negociacao {
+     background: linear-gradient(135deg, #5f4b1e, #a7862b);
+     color: #fff5d6;
+ }
+ .pse-stage-header.contratacao {
+     background: linear-gradient(135deg, #1e5f3a, #2ba75e);
+     color: #d6ffe5;
+ }
+ 
+@@ -112,75 +112,77 @@ st.html("""
+     padding: 24px 12px;
+     opacity: 0.45;
+     font-size: 0.85rem;
+ }
+ 
+ /* ── Stage count badge ── */
+ .pse-count {
+     display: inline-block;
+     background: rgba(255,255,255,0.25);
+     padding: 1px 10px;
+     border-radius: 12px;
+     font-size: 0.78rem;
+     margin-left: 6px;
+     font-weight: 400;
+ }
+ 
+ /* ── Stage total (budget bar) ── */
+ .pse-stage-total {
+     text-align: center;
+     font-size: 0.78rem;
+     font-weight: 600;
+     padding: 6px 0 2px;
+     opacity: 0.7;
+ }
  </style>
- """)
+-""")
++'''
++st.html(GLOBAL_CSS)
  
  # ==========================================
  # 2. ENUMS & CONSTANTS (Blueprint §1.5)
@@ -192,7 +132,7 @@ index 712dad67eecea87f62b2db4f64e72626f18a88df..016281a890f81615f7612609ebf1e354
          "ATJ Aditivo", "Sensor Virtual", "RTO Celulose", "Caldeira ML",
          "Zeolignin III", "Monitoramento pH", "Alcoxilação", "Silicato",
          "Valvula Borboleta", "BRS Integrado", "Antioxidantes HPLC",
-@@ -241,122 +242,334 @@ def generate_mock_projects():
+@@ -241,122 +243,334 @@ def generate_mock_projects():
              "codinome_projeto": cod,
              "cliente": random.choice(["Petrobras", "Eldorado", "Braskem", "Klabin", "BASF"]),
              "lider_tecnico": random.choice(ENUMS["gestores"]),
@@ -528,7 +468,7 @@ index 712dad67eecea87f62b2db4f64e72626f18a88df..016281a890f81615f7612609ebf1e354
          sel_coord = st.selectbox(
              "Coordenação",
              ["Todas"] + ENUMS["coordenacoes"],
-@@ -593,133 +806,142 @@ def render_execution_pipeline():
+@@ -593,133 +807,142 @@ def render_execution_pipeline():
                  "realizacao_pct": st.column_config.ProgressColumn("Realização", min_value=0, max_value=1.5, format="%.0f%%"),
                  "receita_faltante": st.column_config.NumberColumn("Receita faltante", format="R$ %.0f"),
              },
@@ -728,7 +668,7 @@ index 712dad67eecea87f62b2db4f64e72626f18a88df..016281a890f81615f7612609ebf1e354
              )
              fig.update_yaxes(autorange="reversed")
              fig.update_layout(
-@@ -746,40 +968,40 @@ def render_team_allocation():
+@@ -746,40 +969,40 @@ def render_team_allocation():
                  showlegend=False,
              )
              st.plotly_chart(fig, use_container_width=True)
@@ -770,6 +710,3 @@ index 712dad67eecea87f62b2db4f64e72626f18a88df..016281a890f81615f7612609ebf1e354
  
  # Route
  PAGES[page]()
- 
-EOF
-)
